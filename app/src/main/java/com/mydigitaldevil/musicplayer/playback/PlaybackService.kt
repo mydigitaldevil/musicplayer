@@ -1,0 +1,225 @@
+package com.mydigitaldevil.musicplayer.playback
+
+import android.app.PendingIntent
+import android.content.Intent
+import android.os.Bundle
+import androidx.annotation.OptIn
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import com.mydigitaldevil.musicplayer.MainActivity
+import com.mydigitaldevil.musicplayer.R
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/**
+ * Background / lock-screen playback for both audio and video.
+ *
+ * Media3 handles the foreground-service lifecycle, the media notification, lock-screen
+ * controls, Bluetooth/headset media buttons and audio focus. UI talks to this service only
+ * through a `MediaController`, so the activity can die (or sit in PiP) while playback continues.
+ */
+@OptIn(UnstableApi::class)
+@AndroidEntryPoint
+class PlaybackService : MediaSessionService() {
+
+    @Inject lateinit var playbackState: PlaybackStateRepository
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var mediaSession: MediaSession? = null
+    private var sleepTimerJob: Job? = null
+
+    private val stateListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            val videoSize = player.videoSize
+            playbackState.update(
+                PlaybackSnapshot(
+                    isPlaying = player.isPlaying,
+                    playWhenReady = player.playWhenReady,
+                    hasMedia = player.mediaItemCount > 0,
+                    isVideo = player.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO),
+                    videoWidth = videoSize.width,
+                    videoHeight = videoSize.height,
+                ),
+            )
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+
+        // Format coverage: platform decoders first; if one is missing or fails, fall back to the
+        // next decoder and finally to the bundled FFmpeg audio renderer. MKV, MP4/MOV, WebM, AVI,
+        // TS, FLV, OGG, FLAC, WAV, MP3, AAC, AMR and Opus are parsed by ExoPlayer's own extractors.
+        val renderersFactory = DefaultRenderersFactory(this)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            .setEnableDecoderFallback(true)
+        // Lets MP3/AAC/AMR files without a seek index (common in old rips) still seek.
+        val extractorsFactory = DefaultExtractorsFactory()
+            .setConstantBitrateSeekingEnabled(true)
+            .setConstantBitrateSeekingAlwaysEnabled(true)
+
+        val player = ExoPlayer.Builder(this, renderersFactory)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this, extractorsFactory))
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                /* handleAudioFocus = */ true,
+            )
+            .setHandleAudioBecomingNoisy(true) // pause when headphones are unplugged
+            .setWakeMode(C.WAKE_MODE_LOCAL) // local files only; no Wi-Fi lock needed
+            .setSeekBackIncrementMs(SEEK_INCREMENT_MS)
+            .setSeekForwardIncrementMs(SEEK_INCREMENT_MS)
+            .build()
+            .apply { addListener(stateListener) }
+
+        mediaSession = MediaSession.Builder(this, player)
+            .setId(SESSION_ID)
+            .setSessionActivity(sessionActivityIntent())
+            .setCallback(SessionCallback())
+            .build()
+
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider.Builder(this)
+                .setChannelId(NOTIFICATION_CHANNEL_ID)
+                .setChannelName(R.string.notification_channel_playback)
+                .build()
+                .apply { setSmallIcon(R.drawable.ic_notification) },
+        )
+    }
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+
+    /**
+     * Swiping the app away from Recents keeps music going if the user is listening, and
+     * tears everything down (removing the notification) if nothing is playing.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (!isPlaybackOngoing) pauseAllPlayersAndStopSelf()
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        mediaSession?.run {
+            player.removeListener(stateListener)
+            player.release()
+            release()
+        }
+        mediaSession = null
+        playbackState.reset()
+        super.onDestroy()
+    }
+
+    /**
+     * Smart sleep timer: plays normally until `fadeStart`, then ramps volume linearly to zero
+     * over [fadeMs] and pauses. Volume is restored so the next play isn't silent.
+     */
+    private fun startSleepTimer(totalMs: Long, fadeMs: Long) {
+        sleepTimerJob?.cancel()
+        val player = mediaSession?.player ?: return
+        sleepTimerJob = scope.launch {
+            val fade = fadeMs.coerceIn(0, totalMs)
+            delay(totalMs - fade)
+            val startVolume = player.volume
+            val steps = (fade / FADE_STEP_MS).coerceAtLeast(1)
+            for (i in 1..steps) {
+                player.volume = startVolume * (1f - i.toFloat() / steps)
+                delay(FADE_STEP_MS)
+            }
+            player.pause()
+            player.volume = startVolume
+        }
+    }
+
+    private fun sessionActivityIntent(): PendingIntent = PendingIntent.getActivity(
+        this,
+        0,
+        Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    private inner class SessionCallback : MediaSession.Callback {
+
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+            // Custom commands are restricted to our own UI; system controllers get the defaults.
+            if (controller.packageName == packageName) {
+                commands.add(SessionCommand(CMD_SLEEP_TIMER, Bundle.EMPTY))
+                commands.add(SessionCommand(CMD_CANCEL_SLEEP_TIMER, Bundle.EMPTY))
+            }
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(commands.build())
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            when (customCommand.customAction) {
+                CMD_SLEEP_TIMER -> startSleepTimer(
+                    totalMs = args.getLong(ARG_DURATION_MS),
+                    fadeMs = args.getLong(ARG_FADE_MS, DEFAULT_FADE_MS),
+                )
+                CMD_CANCEL_SLEEP_TIMER -> sleepTimerJob?.cancel()
+                else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+            }
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+
+        /**
+         * Controllers (including our own UI) send MediaItems that may only carry a request URI.
+         * Resolve them into playable items so ExoPlayer has a `localConfiguration`.
+         */
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+        ): ListenableFuture<MutableList<MediaItem>> = Futures.immediateFuture(
+            mediaItems.mapTo(mutableListOf()) { item ->
+                val uri = item.requestMetadata.mediaUri
+                if (item.localConfiguration == null && uri != null) item.buildUpon().setUri(uri).build() else item
+            },
+        )
+    }
+
+    companion object {
+        const val CMD_SLEEP_TIMER = "com.mydigitaldevil.musicplayer.SLEEP_TIMER"
+        const val CMD_CANCEL_SLEEP_TIMER = "com.mydigitaldevil.musicplayer.CANCEL_SLEEP_TIMER"
+        const val ARG_DURATION_MS = "duration_ms"
+        const val ARG_FADE_MS = "fade_ms"
+
+        private const val SESSION_ID = "main"
+        private const val NOTIFICATION_CHANNEL_ID = "playback"
+        private const val SEEK_INCREMENT_MS = 10_000L
+        private const val DEFAULT_FADE_MS = 30_000L
+        private const val FADE_STEP_MS = 250L
+    }
+}

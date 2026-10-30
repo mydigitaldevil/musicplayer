@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Background Play Music &amp; Video</string>
+
+    <string name="notification_channel_playback">Playback</string>
+    <string name="notification_channel_mic">Live mic effects</string>
+    <string name="mic_fx_notification_title">Live mic effects are on</string>
+    <string name="action_stop">Stop</string>
+
+    <string name="reward_watch">Watch ad</string>
+    <string name="reward_not_now">Not now</string>
+    <string name="reward_karaoke_title">Unlimited karaoke for 24 hours</string>
+    <string name="reward_karaoke_body">You\'ve used today\'s free karaoke song. Watch a short ad to sing as many songs as you like for the next 24 hours.</string>
+    <string name="reward_visualizers_title">Pro visualizers for 24 hours</string>
+    <string name="reward_visualizers_body">Watch a short ad to unlock all neon and waveform visualizers for the next 24 hours.</string>
+    <string name="reward_filters_title">Exclusive mic filters for 24 hours</string>
+    <string name="reward_filters_body">Watch a short ad to unlock the exclusive voice filters for the next 24 hours.</string>
+</resources>
