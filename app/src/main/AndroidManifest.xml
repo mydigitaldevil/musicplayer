@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Granular media access (Android 13+), legacy fallback for API 26–32. -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
@@ -98,6 +97,23 @@
             android:name=".audio.fx.MicFxService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Soundboard quick access without SYSTEM_ALERT_WINDOW: notification actions land
+             here, and the Quick Settings tile plays the first pinned pad. -->
+        <receiver
+            android:name=".soundboard.QuickPadReceiver"
+            android:exported="false" />
+
+        <service
+            android:name=".soundboard.SoundboardTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_soundboard"
+            android:label="@string/soundboard_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"

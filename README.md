@@ -13,11 +13,34 @@ native Oboe mic-FX engine. Targets **Android 16 (API 36)**, min SDK 26, built wi
 | Background / lock-screen playback (Media3 `MediaSessionService`) | `playback/PlaybackService.kt`, `playback/PlaybackStateRepository.kt` |
 | Low-latency mic FX (C++ / Oboe full duplex + JNI + Kotlin facade) | `cpp/*`, `audio/fx/*` |
 | AdMob layer (consent, pacing, safe placements) | `ads/*`, `ads/ui/*`, `di/AdModule.kt` |
+| Soundboard (in-app sheet, quick-pads notification, Quick Settings tile, 7 presets) | `soundboard/*`, `res/raw/pad_*.wav`, `tools/make_soundboard_pads.py` |
 | App shell (Hilt app, edge-to-edge activity, auto-enter PiP, Material You theme) | `MusicPlayerApp.kt`, `MainActivity.kt`, `ui/theme/Theme.kt` |
 
 Feature screens (library/MediaStore browser, player UI, karaoke vocal remover, ambient mixer,
-soundboard, visualizers, Room stats + Wrapped, onboarding) are **not built yet**. They plug into
+visualizers, Room stats + Wrapped, onboarding) are **not built yet**. They plug into
 the services and the `AdManager` API above.
+
+## Soundboard (no overlay permission)
+
+Instead of a floating overlay window (`SYSTEM_ALERT_WINDOW` is a restricted permission that
+draws extra Play review), there are three ways to reach the sounds:
+
+1. **In-app sheet** (FAB on the main screen). Tap a pad to play it; long-press to pin it or
+   remove it. Mic FX recordings (`files/recordings/*.wav|m4a`, up to 15 s) can be added as pads.
+2. **Quick-pads notification**: a silent notification whose buttons play up to 3 pinned pads.
+   It works over games and video. There's no foreground service; each tap is a broadcast to
+   `QuickPadReceiver`. Swiping the notification away turns the feature off.
+3. **Quick Settings tile**: plays the first pinned pad from the shade, or opens the soundboard
+   if nothing is pinned.
+
+Pads don't request audio focus, so music and games keep playing underneath. During a phone call
+they're heard locally only: Android has no API for regular apps to inject audio into the call
+uplink. The sheet has no ads, because it's used mid-game or mid-call.
+
+The 7 presets (ba-dum-tss, air horn, boing, wrong-answer buzzer, sad trombone, applause,
+crickets) are synthesised by `tools/make_soundboard_pads.py`, so they're original and
+royalty-free. They're loudness-matched to the same RMS and the script is reproducible
+(`python3 tools/make_soundboard_pads.py app/src/main/res/raw`).
 
 ## Format support ("har format chalega")
 
@@ -90,10 +113,7 @@ ADMOB_APP_OPEN_ID=...
 ```
 
 Play Console needs declarations for the `mediaPlayback` and `microphone` foreground-service
-types. A floating overlay soundboard (`SYSTEM_ALERT_WINDOW`) was left out on purpose: it's a
-restricted permission that draws extra review. An in-app sheet or PiP-based soundboard avoids it.
-Android doesn't let regular apps inject audio into a phone call's uplink, so the soundboard
-plays through the media stream only.
+types. The app doesn't request `SYSTEM_ALERT_WINDOW` (see Soundboard above).
 
 ## Status
 
