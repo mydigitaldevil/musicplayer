@@ -10,6 +10,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -100,7 +101,10 @@ fun SafeBannerAd(
             }
 
             // Fixed height reserved up front: no layout shift pushing content under a finger.
-            AndroidView(factory = { adView }, modifier = Modifier.fillMaxWidth().height(heightDp))
+            // key(): a new AdView (after a width change) needs a new view node; the factory runs once per node.
+            key(adView) {
+                AndroidView(factory = { adView }, modifier = Modifier.fillMaxWidth().height(heightDp))
+            }
         }
     }
 }

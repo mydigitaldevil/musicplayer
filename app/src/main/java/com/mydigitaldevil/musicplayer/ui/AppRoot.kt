@@ -82,7 +82,8 @@ fun AppRoot(
     // Deep links from notifications, the QS tile, and files opened from other apps.
     LaunchedEffect(externalRoute) {
         val target = externalRoute ?: return@LaunchedEffect
-        if (route != Routes.ONBOARDING) nav.navigate(target) { launchSingleTop = true }
+        // On a cold start `route` is still null; fall back to the start route so onboarding isn't skipped.
+        if ((route ?: startRoute) != Routes.ONBOARDING) nav.navigate(target) { launchSingleTop = true }
         onExternalRouteHandled()
     }
 

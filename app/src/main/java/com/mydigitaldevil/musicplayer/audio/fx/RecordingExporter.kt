@@ -37,7 +37,8 @@ class RecordingExporter @Inject constructor(
     suspend fun exportM4a(vocalWav: File, beat: Beat?, output: File): File = withContext(Dispatchers.Main) {
         val vocal = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(vocalWav))).build()
         val sequences = buildList {
-            add(EditedMediaItemSequence(vocal))
+            // Media3 1.9: sequences are built via factories; audio-only sequences mix in the composition.
+            add(EditedMediaItemSequence.withAudioFrom(listOf(vocal)))
             if (beat != null) {
                 val beatItem = MediaItem.Builder()
                     .setUri(beat.uri)
@@ -48,7 +49,7 @@ class RecordingExporter @Inject constructor(
                             .build(),
                     )
                     .build()
-                add(EditedMediaItemSequence(EditedMediaItem.Builder(beatItem).setRemoveVideo(true).build()))
+                add(EditedMediaItemSequence.withAudioFrom(listOf(EditedMediaItem.Builder(beatItem).setRemoveVideo(true).build())))
             }
         }
         val composition = Composition.Builder(sequences).build()

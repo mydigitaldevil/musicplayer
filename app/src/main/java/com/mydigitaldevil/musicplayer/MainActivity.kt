@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -193,8 +194,9 @@ class MainActivity : ComponentActivity() {
     /** The framework rejects ratios outside 1:2.39 … 2.39:1, so extreme videos are clamped. */
     private fun pipAspectRatio(state: PlaybackSnapshot): Rational {
         if (state.videoWidth <= 0 || state.videoHeight <= 0) return Rational(16, 9)
-        val ratio = (state.videoWidth.toFloat() / state.videoHeight).coerceIn(1f / 2.39f, 2.39f)
-        return Rational((ratio * 10_000).toInt(), 10_000)
+        // 0.42 / 2.38 rather than the exact limits: rounding must never land just outside them.
+        val ratio = (state.videoWidth.toFloat() / state.videoHeight).coerceIn(0.42f, 2.38f)
+        return Rational((ratio * 10_000).roundToInt(), 10_000)
     }
 
     companion object {

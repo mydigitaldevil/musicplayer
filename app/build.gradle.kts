@@ -8,8 +8,16 @@ plugins {
 // Release AdMob IDs come from ~/.gradle/gradle.properties or CI env, never from VCS.
 // Debug builds always use Google's official test IDs so development traffic can
 // never generate invalid impressions on the production account.
-fun adProp(name: String): String =
-    (findProperty(name) as String?) ?: System.getenv(name) ?: ""
+// An empty AdMob ID makes the SDK throw at app start, so a release build without them stops here
+// with a clear message instead. Debug builds never read these.
+val buildingRelease = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
+fun adProp(name: String): String {
+    val value = (findProperty(name) as String?) ?: System.getenv(name) ?: ""
+    if (buildingRelease && value.isBlank()) {
+        throw GradleException("Release build needs $name. Add it to ~/.gradle/gradle.properties (see README, Release configuration).")
+    }
+    return value
+}
 
 object TestAds {
     const val APP_ID = "ca-app-pub-3940256099942544~3347511713"

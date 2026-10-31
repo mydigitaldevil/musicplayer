@@ -150,7 +150,7 @@ private fun bind(view: NativeAdView, ad: NativeAd) {
     h.cta.setTextOrHide(ad.callToAction)
     ad.icon?.drawable?.let { h.icon.setImageDrawable(it); h.icon.visibility = View.VISIBLE }
         ?: run { h.icon.visibility = View.GONE }
-    ad.mediaContent?.let { h.media.mediaContent = it }
+    ad.mediaContent?.let { h.media.setMediaContent(it) }
     view.setNativeAd(ad) // must be last: registers the views above for click/impression tracking
 }
 
