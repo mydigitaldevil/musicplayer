@@ -48,6 +48,15 @@ fun NativeAdCard(adManager: AdManager, modifier: Modifier = Modifier) {
     DisposableEffect(Unit) { onDispose { nativeAd?.destroy() } }
 
     val ad = nativeAd ?: return // collapse the slot entirely if no fill; no empty placeholder
+    NativeAdCard(ad, modifier)
+}
+
+/**
+ * Renders an ad owned by someone else (e.g. a ViewModel cache for list slots, so scrolling a
+ * slot off and back on screen doesn't fire a new ad request). The owner calls `destroy()`.
+ */
+@Composable
+fun NativeAdCard(ad: NativeAd, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val colors = NativeColors(
         surface = scheme.surfaceContainerHigh.toArgb(),

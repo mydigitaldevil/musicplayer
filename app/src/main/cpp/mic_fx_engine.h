@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring> // before Oboe: FullDuplexStream.h uses memset without including it
 #include <oboe/Oboe.h>
 
 #include <atomic>

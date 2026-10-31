@@ -23,7 +23,7 @@ object TestAds {
 android {
     namespace = "com.mydigitaldevil.musicplayer"
     compileSdk = 36
-    ndkVersion = "28.2.13676358"
+    // NDK and CMake: AGP's defaults (installed on first sync), so no exact version has to exist locally.
 
     defaultConfig {
         applicationId = "com.mydigitaldevil.musicplayer"
@@ -77,7 +77,6 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.31.6"
         }
     }
 
@@ -125,7 +124,6 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.session)
     implementation(libs.media3.ui)
-    implementation(libs.media3.ui.compose)
     implementation(libs.media3.transformer)
     // Software audio decoders for codecs the device lacks (AC3/E-AC3/DTS/TrueHD/ALAC/…).
     implementation(libs.media3.ffmpeg.decoder)
@@ -141,7 +139,6 @@ dependencies {
     implementation(libs.ump)
 
     implementation(libs.oboe)
-    implementation(libs.coil.compose)
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)

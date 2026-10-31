@@ -3,7 +3,7 @@ package com.mydigitaldevil.musicplayer.soundboard
 import androidx.annotation.RawRes
 
 sealed interface PadSource {
-    data class Preset(@RawRes val resId: Int) : PadSource
+    data class Preset(@param:RawRes val resId: Int) : PadSource
     /** A mic FX recording (or exported mix) in app-private storage. */
     data class Recording(val path: String) : PadSource
 }

@@ -91,6 +91,12 @@
             </intent-filter>
         </service>
 
+        <!-- Procedurally generated ambient mix that plays alongside the music player. -->
+        <service
+            android:name=".ambient.AmbientService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <!-- Started only from a visible activity after RECORD_AUDIO is granted;
              a microphone FGS cannot be started from the background on Android 14+. -->
         <service

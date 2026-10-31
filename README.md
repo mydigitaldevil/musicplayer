@@ -4,21 +4,64 @@ Offline audio & video player for Android: 100% Kotlin + Jetpack Compose, Media3,
 native Oboe mic-FX engine. Targets **Android 16 (API 36)**, min SDK 26, built with **Gradle 9.x**
 (Kotlin DSL, version catalog).
 
-## What is in this commit
+## Build the APK in Android Studio
 
-| Area | Files |
+1. Unzip, then **File → Open** the `musicplayer` folder (the one containing `settings.gradle.kts`).
+2. Let Gradle sync. Android Studio downloads Gradle 9.8.2, the Android SDK 36 platform, the **NDK**
+   and **CMake** (accept the SDK Manager prompts; the C++ mic engine needs both).
+3. **Build → Build App Bundle(s) / APK(s) → Build APK(s)**. The debug APK lands in
+   `app/build/outputs/apk/debug/`. Debug builds use Google's **test** ad units, so they're
+   safe to install and click around.
+4. For a signed release: **Build → Generate Signed App Bundle / APK** after adding your real
+   AdMob IDs (see *Release configuration*).
+
+If Android Studio offers newer library versions on sync, accepting the patch updates is fine.
+See *Status* at the bottom for what was and wasn't verified before shipping this code.
+
+## Features and where they live
+
+| Feature | Code |
 |---|---|
-| Build (Gradle 9.8.2 wrapper, AGP 9 with built-in Kotlin, version catalog) | `settings.gradle.kts`, `build.gradle.kts`, `gradle/libs.versions.toml`, `app/build.gradle.kts` |
-| Manifest (media + mic FGS types, granular media permissions, PiP, AdMob ID) | `app/src/main/AndroidManifest.xml` |
-| Background / lock-screen playback (Media3 `MediaSessionService`) | `playback/PlaybackService.kt`, `playback/PlaybackStateRepository.kt` |
-| Low-latency mic FX (C++ / Oboe full duplex + JNI + Kotlin facade) | `cpp/*`, `audio/fx/*` |
-| AdMob layer (consent, pacing, safe placements) | `ads/*`, `ads/ui/*`, `di/AdModule.kt` |
-| Soundboard (in-app sheet, quick-pads notification, Quick Settings tile, 7 presets) | `soundboard/*`, `res/raw/pad_*.wav`, `tools/make_soundboard_pads.py` |
-| App shell (Hilt app, edge-to-edge activity, auto-enter PiP, Material You theme) | `MusicPlayerApp.kt`, `MainActivity.kt`, `ui/theme/Theme.kt` |
+| Library: songs + videos from MediaStore, search, Android 13/14 granular + partial media access | `library/*`, `ui/library/*` |
+| Background / lock-screen playback, every container ExoPlayer supports + FFmpeg audio fallback | `playback/PlaybackService.kt`, `playback/PlayerConnection.kt` |
+| Now Playing: artwork, seek, shuffle/repeat, custom blurred photo background | `ui/player/NowPlayingScreen.kt` |
+| Audio-reactive visualizers (Bars free; Neon wave + Neon ring via rewarded unlock) | `audio/SpectrumAnalyzer.kt`, `ui/player/AudioVisualizer.kt` |
+| Video player with auto picture-in-picture on the home gesture | `ui/player/VideoPlayerScreen.kt`, `MainActivity.kt` |
+| Smart sleep timer: fade-out + optional "close app", shared by music and ambient | `playback/SleepTimer.kt`, `ui/player/SleepTimerSheet.kt` |
+| Live Mic FX: 7 voices, 4 rooms, record over a song, export M4A, save to Music | `cpp/*`, `audio/fx/*`, `ui/micfx/*` |
+| Karaoke: offline vocal remover + live mic; 1 free song/day, then rewarded 24 h unlock | `audio/VocalRemoverProcessor.kt`, `ui/karaoke/*` |
+| Ambient mixer: rain, bonfire, café, river, white noise, binaural, all synthesised live | `ambient/*`, `ui/ambient/*` |
+| Soundboard: in-app sheet, quick-pads notification, Quick Settings tile | `soundboard/*` |
+| Listening stats (Room): top songs/artists, skip rate, repeats, peak hours, shareable Wrapped | `stats/*`, `ui/stats/*` |
+| First-run onboarding (PiP, Mic FX with headphones, ambient + sleep timer) | `ui/onboarding/*` |
+| Settings: Material You toggle, privacy options (UMP), clear stats, licences | `ui/settings/*` |
+| AdMob layer: consent, pacing, safe placements | `ads/*`, `ads/ui/*` |
 
-Feature screens (library/MediaStore browser, player UI, karaoke vocal remover, ambient mixer,
-visualizers, Room stats + Wrapped, onboarding) are **not built yet**. They plug into
-the services and the `AdManager` API above.
+Architecture: single activity, Compose + Navigation, Hilt everywhere, ViewModels expose
+`StateFlow` state and take user intents (MVI-style). Media is controlled only through a Media3
+`MediaController`, so playback survives the UI and lock screen.
+
+## Karaoke vocal remover
+
+Centre-channel cancellation inside ExoPlayer's audio pipeline: lead vocals are usually mixed dead
+centre, so the mid signal is removed while the side signal (stereo-spread instruments) stays.
+Below ~150 Hz the mid is kept, so kick and bass survive. It's fully offline and costs almost no
+CPU. Limits: centre-panned instruments are attenuated too, vocal reverb tails remain, and mono
+files can't be processed. An ML separation model (Spleeter/Demucs-class) would sound cleaner
+but adds tens of MB and heavy CPU, so it's a possible future upgrade rather than the default.
+
+## Visualizers
+
+A `TeeAudioProcessor` taps the decoded PCM, so there's no RECORD_AUDIO and no deprecated
+`audiofx.Visualizer`. A 2048-point FFT feeds 32 log-spaced bands at ~30 fps, and it only runs
+while a visualizer is on screen.
+
+## Ambient mixer
+
+Every sound is generated live (filtered noise, droplet/crackle/clink events, binaural sines), so
+there are no audio files and no audible loop points. It plays on its own `AudioTrack` without
+taking audio focus, so it layers under your music. Levels are matched so equal slider positions
+sound equally loud (measured: 0.156–0.165 RMS for every sound).
 
 ## Soundboard (no overlay permission)
 
@@ -117,8 +160,19 @@ types. The app doesn't request `SYSTEM_ALERT_WINDOW` (see Soundboard above).
 
 ## Status
 
-Not compiled yet. The authoring environment had no Android SDK and couldn't reach Google Maven.
-Library versions in `gradle/libs.versions.toml` are pinned to releases known at authoring time,
-so check them for updates in Android Studio on first sync. The standalone DSP (`cpp/dsp.h`) was
-compiled and smoke-tested on desktop: no NaN/Inf output, pitch ratios land on target, and
-broadband loudness is kept through the pitch shifter.
+**Verified before shipping:**
+- The pure-Kotlin logic (ad frequency capper, soundboard storage codec, FFT, ambient synth) was
+  compiled with the real Kotlin 2.3.21 compiler, and its **20 unit tests pass**.
+- The C++ DSP (`cpp/dsp.h`) was compiled and smoke-tested: no NaN/Inf output, pitch ratios land
+  on target, and loudness is kept through the pitch shifter.
+- Every `R.string` used in code or the manifest exists, there are no duplicates, and every XML
+  resource is well-formed.
+- Maven Central library versions (Kotlin, KSP, Hilt, coroutines, Truth, JUnit, Jellyfin FFmpeg)
+  were checked against Central.
+
+**Not verified:** the Android/Compose/Media3/AdMob code has **not** been compiled. The authoring
+environment had no Android SDK and couldn't reach Google's Maven repository. The code was
+reviewed against those APIs, but expect Android Studio to flag a few small things on the first
+build (a renamed parameter, a missing opt-in). They're usually one-line fixes, and the error
+message points to the exact line. Google-hosted versions (AGP, AndroidX, Media3, AdMob, UMP,
+Oboe) are pinned to releases known at authoring time.
